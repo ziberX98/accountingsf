@@ -14,11 +14,14 @@ import axios from 'axios'
 // Variables reactivas
 const visible = ref(false)
 const products = ref([])
-const bills = ref([])
+const bills = ref<{ id: number; name: string; total: number; creation_date: string }[]>([])
 const totalFacturas = ref<number>(0)
-const selectedCity = ref()
+const selectedProduct = ref()
 const numeroFactura = ref<string>('')
+const prueba = ref(false)
 const errorMessage = ref<string>('')
+const showProductsDialog = ref(false)
+const selectedBillProducts = ref<any[]>([])
 const submitted = ref<boolean>(false)
 const selectedProducts = ref<{ id: number; name: string; price: number; cantidad: number }[]>([])
 
@@ -34,13 +37,31 @@ const calcularTotalFacturas = () => {
 // Función para obtener los datos iniciales del backend
 const obtenerDatos = async () => {
   try {
-    const response = await axios.get('http://127.0.0.1:8000/products')
-    products.value = response.data
+    const responseProducts = await axios.get('http://127.0.0.1:8000/products')
+    products.value = responseProducts.data
+    const responseBills = await axios.get('http://127.0.0.1:8000/bills')
+    bills.value = responseBills.data.map((factura: any) => ({
+      ...factura,
+      creation_date: new Date(factura.created_at).toLocaleDateString(), // Convertir la fecha a formato legible
+      cantidad: 0
+    }))
+
+    totalFacturas.value = calcularTotalFacturas()
   } catch (error) {
     console.error('Error al obtener datos del backend:', error)
   }
 }
 onMounted(obtenerDatos)
+
+const mostrarProductos = async (idFactura: number) => {
+  try {
+    const response = await axios.get(`http://127.0.0.1:8000/bills/${idFactura}`)
+    selectedBillProducts.value = response.data.products
+    showProductsDialog.value = true
+  } catch (error) {
+    console.error('Error al obtener los productos de la factura:', error)
+  }
+}
 
 // Función para cancelar la creación de factura
 const cancel = () => {
@@ -82,26 +103,11 @@ const crearFactura = async () => {
     selectedProducts.value = []
 
     visible.value = false
-    obtenerFactura()
+    obtenerDatos()
   } catch (error) {
     console.error('Error al crear la factura:', error)
   }
 }
-
-// Función para obtener las facturas del backend
-const obtenerFactura = async () => {
-  try {
-    const response = await axios.get('http://127.0.0.1:8000/bills')
-    bills.value = response.data
-    console.log('Datos de las facturas:', bills.value)
-    totalFacturas.value = calcularTotalFacturas()
-  } catch (error) {
-    console.error('Error al obtener datos del backend:', error)
-  }
-}
-
-// Cargar las facturas cuando se monta el componente
-onMounted(obtenerFactura)
 
 // Observar cambios en las facturas y actualizar el total
 watch(bills, () => {
@@ -112,7 +118,7 @@ watch(bills, () => {
 <template>
   <div class="actionBar">
     <Button label="Agregar factura" severity="success" text raised @click="visible = true" />
-    <Button label="Agregar salida" severity="danger" text raised />
+    <Button label="Agregar salida" severity="danger" text raised @click="prueba = true" />
   </div>
 
   <div class="card justify-content-center">
@@ -128,18 +134,18 @@ watch(bills, () => {
         <ul class="flex justify-content-center p-0">
           <div class="card flex justify-content-center">
             <Listbox
-              v-model="selectedCity"
+              v-model="selectedProduct"
               :options="products"
               filter
               optionLabel="name"
               class="w-20rem"
               listStyle="max-height:100px"
-              @change="agregarProductoSeleccionado(selectedCity)"
+              @change="agregarProductoSeleccionado(selectedProduct)"
             />
           </div>
         </ul>
         <div v-if="submitted && errorMessage" class="error-message">{{ errorMessage }}</div>
-        <div class="billNumber flex justify-content-center align-items-center">
+        <div class="bill-number flex justify-content-center align-items-center">
           <p class="">Factura #:</p>
           <InputText class="input-text" height="10px" type="number" v-model="numeroFactura" />
         </div>
@@ -162,6 +168,12 @@ watch(bills, () => {
       <Column field="number" header="Número"></Column>
       <Column field="name" header="Razon"></Column>
       <Column field="total" header="Valor"></Column>
+      <Column field="creation_date" header="Fecha"></Column>
+      <Column header="Acciones">
+        <template #body="{ data }">
+          <Button label="Ver Productos" @click="mostrarProductos(data.id)" />
+        </template>
+      </Column>
       <ColumnGroup type="footer">
         <Row>
           <Column footer="Totals:" :colspan="2" footerStyle="text-align:right" />
@@ -170,10 +182,21 @@ watch(bills, () => {
       </ColumnGroup>
     </DataTable>
   </div>
+
+  <Dialog
+    v-model:visible="showProductsDialog"
+    modal
+    header="Productos de la Factura"
+    :style="{ width: '30rem' }"
+  >
+    <li v-for="producto in selectedBillProducts" :key="producto.id">
+      {{ producto.name }} - Cantidad: {{ producto.pivot.quantity }} - Precio: {{ producto.price }}
+    </li>
+  </Dialog>
 </template>
 
 <style scoped>
-.billNumber .input-text {
+.bill-number .input-text {
   height: 35px;
 }
 </style>
